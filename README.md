@@ -1,47 +1,75 @@
 # Deep in the Flux of Texas
-### Modeling Neutron Behavior Across Heterogeneous Media
+### A 2D Neutron Transport Study Using Elevation-Based Materials and Population-Based Sources
 
 **NUEN 430 — Fall 2026 Final Project**  
-**Team:** Joseangel Lima-Tapia, Madalyn Oliver, and Luke Wood
+**Team:** Joseangel Lima-Tapia, Madalyn Oliver, and Luke Wood  
+**Status:** In development — scope updated after instructor feedback (November 5, 2026)
 
 ## Overview
 
-This project aims to develop a **two-dimensional, one-group, time-dependent neutron transport solver** on a triangular mesh shaped like Texas. Elevation data will determine the material assigned to each mesh element, while population-density data will determine the strength of an illustrative external neutron source. We will study the resulting steady-state angular/scalar flux and the response to a time-limited incident beam along part of the boundary.
+This project uses a map of Texas as the basis for a **two-dimensional, one-group neutron transport simulation**. Terrain elevation will be used to assign hypothetical material regions, and population density will be used to place weak, strong, or zero external neutron sources. The primary goal is to implement, verify, and study a working transport solver before adding advanced features.
 
-Texas is used as a computational geometry and data-mapping exercise; the materials and sources are hypothetical, **not a physical model of neutron transport across the real state**.
+The **core solver** will use the **discrete ordinates ($S_N$) method with diamond-difference spatial discretization on a Cartesian grid**. We will first solve steady-state, fixed-source transport with absorption and isotropic scattering. Once the solver is verified, we will apply it to the Texas map and explore how the material layout and source distribution affect the scalar neutron flux.
 
-## Planned numerical method
+> **Modeling note:** Texas provides a recognizable geometry for a numerical experiment. The assigned materials and neutron sources are hypothetical, not a physical prediction of neutron behavior over real geographic distances. The computational domain/length scales and macroscopic cross sections will be made consistent or nondimensionalized.
 
-| Component | Planned approach |
-| --- | --- |
-| Geometry and mesh | 2D Texas outline; triangular mesh in Gmsh format |
-| Spatial discretization | **P1 discontinuous Galerkin (DG-P1)** finite elements |
-| Interface treatment | Upwind numerical fluxes |
-| Angular discretization | Discrete ordinates (**S_N**) |
-| Time integration | **Crank–Nicolson** |
-| Baseline boundary | **White (diffuse) reflection**; zero net boundary current |
-| Transient excitation | Prescribed incident beam on a selected boundary segment, then switched off |
-| Implementation | Python, NumPy, SciPy; Gmsh for mesh work |
+## Revised project scope
 
-The model will include streaming, total interactions, isotropic scattering, and an optional one-group fission-production term. The transport unknown is the **angular flux**; scalar flux maps will be computed by angular quadrature. After spatial and angular discretization, the time-dependent system will have the form
+Following instructor feedback, the project is divided into a required **core** and **optional extensions**.
+
+| Component | Core project | Optional extension (only after verification) |
+| --- | --- | --- |
+| Spatial grid | Structured 2D Cartesian grid covering a map of Texas | Unstructured triangular Gmsh mesh |
+| Spatial method | **Diamond differencing** | **DG-P1** with upwind numerical fluxes |
+| Angular method | **$S_N$ discrete ordinates** | Higher angular orders / comparison with DG-P1 |
+| Problem type | **Steady-state, one-group, fixed-source transport** | Time-dependent transport |
+| Interactions | Absorption and isotropic scattering; **no fission multiplication** | Carefully controlled fission study only if subcriticality is established |
+| Boundaries | **Vacuum incoming flux** on the outer Cartesian boundary | Prescribed incident beam; more advanced reflection models |
+| Time integration | Not required for the steady-state core | **Crank–Nicolson** with time-step refinement |
+| Outputs | Verified flux solutions, error/convergence plots, Texas scalar-flux map | Transient flux animation; DG-P1 comparisons |
+
+The previously proposed **DG-P1 + $S_N$ + white-reflective boundaries + Crank–Nicolson** formulation is **not the baseline project**. We will consider DG-P1 **only if the diamond-difference solver is working and verified first**.
+
+### Why the change?
+
+The original formulation combined multiple challenging methods: discontinuous finite elements on an unstructured mesh, angular transport, reflective boundary coupling, and implicit transients. A Cartesian diamond-difference $S_N$ solver is more closely aligned with the course methods and provides a tractable path to the required verification and results.
+
+We are also avoiding fission multiplication in the baseline problem. Fissile material regions combined with zero-leakage reflective boundaries could make the system critical or supercritical, in which case a finite steady-state fixed-source solution would not exist. **For the core project, $\nu\Sigma_f=0$ everywhere.** Labels such as LEU and plutonium are retained as hypothetical region categories; modeling their actual fission physics is out of scope for the baseline.
+
+## Mathematical model
+
+For each discrete angular direction $\boldsymbol\Omega_m=(\mu_m,\eta_m,\ldots)$, the steady-state, one-group transport equation is
 
 $$
-M\frac{d\boldsymbol{\Psi}}{dt}+A\boldsymbol{\Psi}=\mathbf{F}(t),
+\mu_m\frac{\partial\psi_m}{\partial x}
++\eta_m\frac{\partial\psi_m}{\partial y}
++\Sigma_t(x,y)\psi_m
+=\frac{\Sigma_s(x,y)}{4\pi}\phi(x,y)
++\frac{Q(x,y)}{4\pi},
 $$
 
-where $\boldsymbol{\Psi}$ collects angular-flux degrees of freedom. A Crank–Nicolson step is
+where the scalar flux is approximated by angular quadrature,
 
 $$
-\left(M+\frac{\Delta t}{2}A\right)\boldsymbol{\Psi}^{n+1}
-=\left(M-\frac{\Delta t}{2}A\right)\boldsymbol{\Psi}^{n}
-+\frac{\Delta t}{2}\left(\mathbf{F}^{n+1}+\mathbf{F}^{n}\right).
+\phi(x,y)\approx\sum_m w_m\psi_m(x,y),
+\qquad \sum_m w_m=4\pi.
 $$
 
-## Elevation-based materials
+Here $\psi_m$ is the angular flux, $\Sigma_t$ and $\Sigma_s$ are the total and scattering macroscopic cross sections, and $Q$ is the external source. The physical domain is two-dimensional in space; the angular quadrature retains direction dependence. There is **no fission source term** in the baseline solver.
 
-These elevation thresholds are **proposed model inputs** and may be revised when data are processed.
+**Diamond differencing** balances angular flux across each rectangular cell and approximates a cell-centered flux by averages of incoming and outgoing face fluxes. Directional transport sweeps will be coupled through **source iteration** for isotropic scattering. Spatial and angular refinement, together with source-iteration convergence criteria, will be documented.
 
-| Material ID | Elevation (m) | Material |
+### Boundaries and Texas map representation
+
+The baseline implementation will use a **rectangular Cartesian computational grid** containing a rasterized Texas outline. Inside Texas, elevation and population data determine the materials and sources. Cells outside the Texas mask will be assigned a specified nonmultiplying background material and no external sources. The **outer rectangular boundary** will use vacuum conditions (zero incoming angular flux).
+
+This is deliberately simpler than a reflective boundary that follows every irregular segment of the state outline. A staircase representation of the Texas border or white-reflective boundaries may be investigated only after the core solver is verified. A time-limited incident boundary beam is likewise an optional extension, not a prerequisite for the steady-state study.
+
+## Elevation-based material regions
+
+The following thresholds come from our original proposal and may be adjusted when we choose and process the elevation dataset.
+
+| Material ID | Elevation (m) | Hypothetical material label |
 | --- | --- | --- |
 | 0 | $h < 100$ | Water |
 | 1 | $100 \le h < 300$ | Graphite |
@@ -49,78 +77,73 @@ These elevation thresholds are **proposed model inputs** and may be revised when
 | 3 | $700 \le h < 1500$ | Low-enriched uranium (5%) |
 | 4 | $h \ge 1500$ | Weapons-grade plutonium |
 
-## Population-based external sources
+For the **nonmultiplying baseline**, these are material-region identifiers with assigned absorption/scattering coefficients; they are **not complete physical models of fissile nuclear fuel**. Cross-section datasets and unit conventions remain to be finalized.
 
-Source strengths are hypothetical and will be assigned based on population density.
+## Population-based source regions
 
-| Source ID | Population density (people/km²) | Source |
+| Source ID | Population density (people/km²) | External source |
 | --- | --- | --- |
-| 0 | $\rho < 100$ | None ($Q=0$) |
-| 1 | $100 \le \rho < 1000$ | Weak ($Q_{\mathrm{weak}}$) |
-| 2 | $\rho \ge 1000$ | Strong ($Q_{\mathrm{strong}}$) |
+| 0 | $\rho < 100$ | No source: $Q=0$ |
+| 1 | $100 \le \rho < 1000$ | Weak: $Q=Q_{\mathrm{weak}}$ |
+| 2 | $\rho \ge 1000$ | Strong: $Q=Q_{\mathrm{strong}}$ |
 
-Numerical values for $Q_{\mathrm{weak}}$ and $Q_{\mathrm{strong}}$, the material cross sections, and the data sources still need to be finalized.
+The numerical values of $Q_{\mathrm{weak}}$ and $Q_{\mathrm{strong}}$ are still to be selected. The population density is a **data-driven way to position hypothetical neutron sources**, not a claim that populated areas produce these neutron source strengths.
 
-## Current status
+## Verification and numerical study
 
-- [x] Defined project scope and selected DG-P1, $S_N$, and Crank–Nicolson methods.
-- [x] Created an initial Texas-shaped **2D triangular mesh** (`texas_2d_triangles.msh`) and editable geometry (`texas_2d.geo`).
-- [x] Created a separate **toy diffusion prototype** to test mesh loading, localized sources, and animation output. **This is not the transport solver.**
-- [ ] Obtain and map elevation and population-density datasets.
-- [ ] Assign material cross sections and source strengths by element.
-- [ ] Implement and verify steady-state DG-P1 / $S_N$ transport.
-- [ ] Implement white-reflective boundaries and the incident beam.
-- [ ] Implement and verify Crank–Nicolson transient transport.
-- [ ] Produce convergence studies, flux maps, and an animation.
+Verification comes **before** the full Texas application.
 
-## Repository layout (proposed)
+1. **Pure-absorber attenuation:** For a homogeneous non-scattering case, compare the computed directional flux with the known exponential attenuation solution.
+2. **Manufactured solution:** Prescribe a smooth angular-flux field, derive consistent forcing and boundary data, and measure numerical error.
+3. **Mesh refinement:** Plot error versus Cartesian mesh size and estimate the observed spatial convergence order. Examine angular-order dependence as appropriate.
+4. **Source-iteration convergence:** Track residual/change per iteration and explain the stopping criterion for scattering problems.
+5. **Texas study:** Map materials and population-based sources and interpret how heterogeneity and source contrast change the steady-state scalar flux.
+6. **Only if time permits:** Introduce a Crank–Nicolson transient, verify temporal order by time-step refinement, and animate an incident beam. An external-code comparison or DG-P1 implementation is also a stretch goal.
+
+Diamond differencing can produce nonphysical negative angular fluxes in difficult, optically thick cells; such behavior, if encountered, will be reported and addressed through mesh/parameter studies rather than hidden.
+
+## Current progress
+
+- [x] Defined the Texas geography, hypothetical materials, and population-based source categories.
+- [x] Created an initial **triangular Gmsh Texas mesh** for exploratory work; it is not the baseline diamond-difference grid.
+- [x] Built a separate **toy diffusion prototype** for visualizing localized sources; it is not a neutron transport solver.
+- [x] Updated the numerical approach in response to instructor feedback.
+- [ ] Create a Cartesian grid with a rasterized Texas/material/source map.
+- [ ] Implement steady-state one-group $S_N$ diamond-difference sweeps.
+- [ ] Add isotropic scattering and source iteration.
+- [ ] Verify pure-absorber attenuation and a manufactured solution.
+- [ ] Run spatial/angular refinement and source-iteration convergence tests.
+- [ ] Generate steady-state Texas flux maps and parameter-study results.
+- [ ] **Optional:** Implement Crank–Nicolson transient transport and an animation.
+- [ ] **Optional:** Revisit DG-P1 on the triangular mesh after the diamond-difference solver is verified.
+
+## Proposed repository organization
 
 ```text
 .
 ├── README.md
-├── mesh/
-│   ├── texas_2d.geo
-│   └── texas_2d_triangles.msh
-├── data/                 # Elevation/population data or download instructions
-├── src/                  # Planned transport solver and mesh/data utilities
-├── tests/                # Planned manufactured and benchmark problems
-├── results/              # Generated figures, tables, and animations
-└── prototype/            # Optional: earlier diffusion-only demonstration
+├── src/                 # Cartesian S_N / diamond-difference solver (planned)
+├── data/                # Texas raster/material/source maps or retrieval instructions
+├── tests/               # Pure absorber and manufactured-solution tests (planned)
+├── results/             # Flux maps, convergence plots, tables (planned)
+├── legacy_mesh/         # Earlier triangular Gmsh mesh, if retained
+└── prototypes/          # Earlier diffusion visualization, if retained
 ```
 
-*The folder structure above is a plan; not all folders or files exist yet.*
+*This layout is a suggestion, not a claim that these folders currently exist. File-specific run instructions will be added as modules are implemented.*
 
-## Mesh preview and regeneration
+## Course milestones
 
-Open `texas_2d_triangles.msh` directly in **Gmsh** to inspect the initial triangular mesh. If the editable geometry is in `mesh/`, regenerate a mesh with:
+| Due date (2026) | Deliverable |
+| --- | --- |
+| October 30 | Project proposal (submitted) |
+| **November 20** | **Verification checkpoint:** error-versus-mesh-size or time-step plot with observed order |
+| **December 7, 11:59 p.m.** | Final report, slides, and Git repository link |
+| December 10 | Presentation and live Q&A defense |
 
-```bash
-gmsh mesh/texas_2d.geo -2 -format msh2 -o mesh/texas_refined.msh
-```
+## Reproducibility and attribution
 
-The supplied mesh uses a projected Texas coordinate system measured in **kilometers**, while nuclear macroscopic cross sections are typically specified in inverse centimeters. Coordinate and coefficient units must therefore be made consistent (or the numerical problem nondimensionalized). The existing outline is simplified for computational use.
+We will document the Python dependencies, input datasets, mesh sizes, run commands, verification tolerances, and the script that produces each figure as the code is developed. Data and software sources will be credited, and the final report will include the course-required disclosure of AI use.
 
-## Verification plan
-
-1. **Manufactured solution:** prescribe a known angular flux, derive the corresponding source/boundary data, and evaluate error versus mesh refinement.
-2. **Pure absorber benchmark:** compare a beam in a homogeneous absorbing domain with analytical exponential attenuation.
-3. **Time-step refinement:** check temporal convergence of Crank–Nicolson for a smooth transient test.
-4. **Steady/transient consistency:** after the extra boundary beam is removed, check that a stable system relaxes toward the steady solution with the remaining sources.
-5. **Optional external comparison:** compare a matched steady-state case against **OpenSn**.
-
-## Planned deliverables
-
-- Texas mesh with elevation-based material and population-based source maps.
-- Steady-state scalar neutron-flux map.
-- Animation of a transient boundary beam and its subsequent relaxation.
-- Mesh-refinement error plot and accompanying error table.
-- Time-step refinement study and steady-state comparison.
-- Reproducible code, final report, and presentation.
-
-## Reproducibility
-
-Detailed setup commands and figure-generation instructions will be added as the **transport solver** is implemented. The existing diffusion prototype can be kept separately for illustration, but its output should not be presented as a verified transport result.
-
-## Credits and references
-
-Developed for **NUEN 430 (Fall 2026)**. Data sources, nuclear cross-section references, external software citations, and the course-required AI-use statement will be added as the project progresses.
+**Course:** NUEN 430, Fall 2026.  
+**Note:** This README describes the **revised project plan**, not a claim that the core transport solver has already been implemented or verified.
