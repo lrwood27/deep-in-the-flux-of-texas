@@ -1,0 +1,6 @@
+# Local elevation data folder
+/Elevation/
+
+# Python-generated files
+__pycache__/
+*.pyc
