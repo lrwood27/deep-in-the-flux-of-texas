@@ -8,10 +8,7 @@ import requests #request needed downloads
 from pathlib import Path #path object creator for files
 from urllib.parse import urlparse #breaks up urls
 
-
-# In[ ]:
-
-
+urls = []
 #text file with all of the download links
 with open("data.txt", "r") as file:
     for line in file:
