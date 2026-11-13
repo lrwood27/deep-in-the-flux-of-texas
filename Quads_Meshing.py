@@ -1,11 +1,12 @@
-
 import numpy as np
 import geopandas as gpd #used to process Texas map and create boundaries
+#^^this uses the shapely module for its geometric objects!
 from pathlib import Path #used for reading elevation files
 import gmsh #meshing module
 import meshio #used to read created mesh, get nodes, and get quad cell coordinates
 import rasterio #used to read elevation files, pop density file, transform coordinates,
                     #and grab indices and data values at specific coordinates
+from shapely.geometry import Polygon #using this to simplify the Texas polygon further
 
 #modules below used for plotting
 import matplotlib.pyplot as plt
@@ -14,29 +15,89 @@ from rasterio.warp import transform
 from matplotlib.collections import PolyCollection
 from matplotlib.colors import PowerNorm, ListedColormap, BoundaryNorm
 
-#This code makes the mesh of Texas, overlays elevation and population density data,
-# and uses this data 
+
+
 
 states = gpd.read_file('cb_2023_us_state_500k.zip') #reading geo data for all states
 tx = states.loc[states['NAME']=='Texas'].copy() #getting geo data for texas
 tx_meters = tx.to_crs('EPSG:5070') #change coordinate system from degrees to meters
 
+
+
+
 tx_pieces = tx_meters.explode(ignore_index=True) #breaking up the multi polygon into rows of polygons
 piece_areas = tx_pieces.geometry.area #calculating the area of each polygon piece
 big_piece_id = piece_areas.idxmax() #get index of piece with largest area (mainland)
 
+
+
+
 tx_main = tx_pieces.loc[[big_piece_id]].copy() #table containing just mainland
 
+
+
+
 tx_polygon = tx_main.geometry.iloc[0] #getting the actual polygon
+#^While this is GeoPandas, it uses the Shapely module for geometry so some of the functions being used overlap
+ # even though the functions are from different modules
 
 
-tx_bounds = list(tx_polygon.exterior.coords) #list of coordinates for the outside boundary of tx
-tx_bounds = tx_bounds[:-1] #last coordinate is repeat of first
+#Polygon takes the exterior coordinates to create a single polygon, so any holes that may exist are closed
+mainland = Polygon(tx_polygon.exterior) #the .exterior function grabs all boundary points from tx_polygon
 
 
-simple_tx = tx_polygon.simplify(tolerance=1000, preserve_topology=True) #simpler version
-#^^takes out points between every 1000 meters, unless there are important bends
-#preserve topology makes it include the points with bends
+#used to check polygon validity or return the largest polygon if multiple exist
+def largest_polygon(geom, process):
+    
+    if geom.is_empty:
+        return(f'{process} processing got rid of the whole polygon :(')
+        
+    if geom.geom_type == 'Polygon': 
+        return geom
+        
+    if geom.geom_type == 'MultiPolygon':
+        return max(geom.geoms, key=lambda p: p.area) #get the largest of the polygons
+      #^^polygon objects need a specified value for "largest" so we specify the largest area using the key, 
+          #p=polygon
+    
+    raise ValueError(f'Invalid geometry type: {geom.geom_type}') #if for some reason geometry is invalid
+
+
+
+bay_radius = 10000. #trying to close the bay, estimated size
+ridge_radius = 7000. #trying to smooth ridges, estimated size
+simplify_tolerance = 10000. #allowed deviation between original geometry and simplified geometry
+
+
+
+#Closing the Houston bay area
+process_tx = mainland.buffer(bay_radius).buffer(-bay_radius)
+
+#^equivalent form:
+#expand_tx = mainland.buffer(bay_radius) <- expands polygon to fill holes, specifically the bay
+#process_tx = expand_tx.buffer(-bay_radius) <- shrinks polygon back to return it to its normal size, but
+                                                #with holes filled
+
+#Grab the largest polygon after processing, check if the polygon is still valid
+process_tx = largest_polygon(process_tx, 'Bay')
+
+
+#Resolving the finer ridges
+process_tx = process_tx.buffer(ridge_radius).buffer(-ridge_radius) #same process as the bay resolving
+
+#Grab the largest polygon and check its validity again
+process_tx = largest_polygon(process_tx, 'Ridge')
+
+
+#Enclose a new polygon after processing
+new_tx = Polygon(process_tx.exterior)
+
+
+
+simple_tx = new_tx.simplify(tolerance=simplify_tolerance, preserve_topology=True) #simpler version
+#tolerance defines the maximum allowed distance between the original geometry and the simplified lines
+#preserve topology prevents self intersections or invalid geometries
+
 
 
 og = gpd.GeoSeries([tx_polygon], crs=tx_meters.crs,)
@@ -81,9 +142,10 @@ try:
     
     gmsh.model.mesh.generate(2) #creates the mesh, 2=2D
     gmsh.write('tx_mesh.msh') #write mesh file
-
+    
 finally: #using finally closes out the gmsh session even if there's an error
     gmsh.finalize()
+
 
 
 #read the quadrilateral mesh
@@ -91,22 +153,28 @@ mesh = meshio.read('tx_mesh.msh')
 nodes = mesh.points[:, :2] #get nodes
 quads = mesh.get_cells_type('quad') #get cell info
 
+
 #make sure no triangles snuck in the mesh
 if len(mesh.get_cells_type('triangle')) > 0:
     raise ValueError('Mesh generation left non-quadrilateral surface cells.')
+
 
 #make sure theres quads in the mesh
 if len(quads) == 0:
     raise ValueError('No quadrilaterals found in tx_mesh.msh.')
 
+
 #quad/cell count
 print('Quadrilaterals:', len(quads))
+
 
 
 #calculating area centroids of the quadrilaterals, in EPSG:5070 meters
 #centroids are used to analyze elevation/population density data at a single point
 #uses the general polygon centroid formula
 centers = np.zeros((len(quads), 2))
+
+
 
 for i, quad in enumerate(quads): #each quad has 4 node entries
     points = nodes[quad]
@@ -125,13 +193,17 @@ for i, quad in enumerate(quads): #each quad has 4 node entries
     #formula uses 1/6*A, this is equivalently expressed as 1/3*2*A
     centers[i] = np.array([x_sum, y_sum]) / (3.0 * double_area)
 
+
+
 #should be number of quads
 print(len(centers))
+
 
 
 #reading all of the elevation files
 cell_elevation = np.full(len(quads), np.nan) #no number array for quads to record elevation
 dem_files = sorted(Path('Elevation').glob('*.tif')) #sorted list of tif files (glob finds the files)
+
 
 for file_num, dem_path in enumerate(dem_files, start=1):
     with rasterio.open(dem_path) as dem:
@@ -169,9 +241,11 @@ for file_num, dem_path in enumerate(dem_files, start=1):
         #^uncomment that if you want to see the progress
 print('done')
 
+
 #reading population density file
 pop_file = 'usa_pd_2020_1km.tif'
 cell_pop = np.full(len(quads), np.nan) #population density per cell array, initialized as nan
+
 
 with rasterio.open(pop_file) as pop:
     #transforming centroid units into same units of the pop file
@@ -191,9 +265,13 @@ with rasterio.open(pop_file) as pop:
                     cell_pop[i]=float(sample[0])
 
 
+
+
 #just if you want to see how many cells don't have data
 no_pop_dats = ~np.isfinite(cell_pop) #~ returns reverse, so all non-finite entries
 print(np.count_nonzero(no_pop_dats))
+
+
 
 
 #material defining
@@ -222,9 +300,11 @@ for i in range(len(quads)):
     else:
         cell_mat[i] = 4
 
+
 for mat in range(5):
     count = np.count_nonzero(cell_mat==mat)
     print(f'material ID: {mat}, count: {count}')
+
 
 
 
@@ -245,12 +325,34 @@ for i in range(len(quads)):
         else:
             cell_source[i] = 2
 
+
 for Q in range(3):
     count = np.count_nonzero(cell_source == Q)
     print(f'source ID: {Q}, count: {count}')
 
 
-#everything below is plot functions
+
+
+#Writing a file with all the needed parameters that can be loaded into our other scripts
+#If we imported parameters from this script it would probably run it again and we don't have that time
+np.savez("mesh_params.npz", nodes=nodes, quads=quads,
+         centers=centers, cell_mat=cell_mat, cell_source=cell_source)
+
+# .npz is a zip file that stores multiple numpy arrays, you need to use np.load to read them
+# below is how you grab all of the parameters:
+#with np.load('mesh_params.npz', allow_pickle=False) as dat:
+     #^allow_pickle=False just means it won't think any of the files are malicious
+#    nodes = dat['nodes']
+#    quads = dat['quads']
+#    centers = dat['centers']
+#    cell_mat = dat['cell_mat']
+#    cell_source = dat['cell_source']
+
+
+
+# everything below is plot functions
+
+
 
 def mesh_map():
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -269,6 +371,7 @@ def mesh_map():
     ax.autoscale_view()
     ax.set_aspect('equal')
     plt.show()
+
 
 
 
@@ -303,6 +406,12 @@ def elev_map():
 
 
 
+
+
+
+
+
+
 def pop_map():
     polygons = []
     for quad in quads:
@@ -334,6 +443,7 @@ def pop_map():
     ax.set_title("Population density sampled at Texas quadrilateral centers")
     
     plt.show()
+
 
 
 
@@ -387,6 +497,7 @@ def mat_map():
 
 
 
+
 def source_map():
     polygons = []
     for quad in quads:
@@ -428,3 +539,4 @@ def source_map():
     ax.set_title("Prescribed source regions")
     
     plt.show()
+
