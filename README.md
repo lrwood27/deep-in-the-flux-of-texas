@@ -120,6 +120,14 @@ source_map()  # Source IDs
 
 The functions display Matplotlib windows using `plt.show()`; they do not automatically save figures.
 
+## Cartesian solver starter templates
+
+The unfinished outlines in [`src/texas_transport/sweep.py`](src/texas_transport/sweep.py)
+and [`verification/infinite_medium_square.py`](verification/infinite_medium_square.py)
+provide TODOs for developing the simple solver yourself. They use NumPy edge arrays,
+plain functions, and cell widths named `hx` and `hy`. The sweep and verification
+are not implemented yet; the templates do not establish numerical correctness.
+
 ## Geographic preprocessing
 
 `scripts/preprocessing/Quads_Meshing.py` performs the following steps:
