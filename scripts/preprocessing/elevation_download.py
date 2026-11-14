@@ -2,9 +2,12 @@ import requests #request needed downloads
 from pathlib import Path #path object creator for files
 from urllib.parse import urlparse #breaks up urls
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+ELEVATION_DIR = PROJECT_ROOT / 'data' / 'raw' / 'elevation'
+
 urls = []
 #text file with all of the download links
-with open("data.txt" , "r") as file:
+with open(ELEVATION_DIR / 'urls.txt', 'r') as file:
     for line in file:
         url = line.strip()
 
@@ -12,8 +15,8 @@ with open("data.txt" , "r") as file:
             urls.append(url)
 
 
-elevation_folder = Path('Elevation') #my folder with elevation data
-elevation_folder.mkdir(exist_ok = True) #if the directory exists already its ok
+elevation_folder = ELEVATION_DIR / 'tiles' #my folder with elevation data
+elevation_folder.mkdir(parents=True, exist_ok=True) #if the directory exists already its ok
 c = 1
 
 for url in urls:

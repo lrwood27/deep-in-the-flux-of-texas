@@ -227,14 +227,14 @@ try:
     gmsh.option.setNumber('Mesh.SubdivisionAlgorithm', 1) #1=all quads, subdivide mesh into all quads
     
     gmsh.model.mesh.generate(2) #creates the mesh, 2=2D
-    gmsh.write('tx_mesh.msh') #write mesh file
+    gmsh.write(str(MESH_FILE)) #write mesh file
     
 finally: #using finally closes out the gmsh session even if there's an error
     gmsh.finalize()
 
 
 #read the quadrilateral mesh
-mesh = meshio.read('tx_mesh.msh')
+mesh = meshio.read(MESH_FILE)
 nodes = mesh.points[:, :2] #get nodes
 quads = mesh.get_cells_type('quad') #get cell info
 
@@ -299,7 +299,7 @@ print(len(centers))
 
 #reading all of the elevation files
 cell_elevation = np.full(len(quads), np.nan) #no number array for quads to record elevation
-dem_files = sorted(Path('Elevation').glob('*.tif')) #sorted list of tif files (glob finds the files)
+dem_files = sorted(ELEVATION_DIR.glob('*.tif')) #sorted list of tif files (glob finds the files)
 
 
 for file_num, dem_path in enumerate(dem_files, start=1):
@@ -340,7 +340,7 @@ print('done')
 
 
 #reading population density file
-pop_file = 'usa_pd_2020_1km.tif'
+pop_file = RAW_DATA_DIR / 'population' / 'usa_pd_2020_1km.tif'
 cell_pop = np.full(len(quads), np.nan) #population density per cell array, initialized as nan
 
 
@@ -448,13 +448,13 @@ for Q in range(3):
 
 #Writing a file with all the needed parameters that can be loaded into our other scripts
 #If we imported parameters from this script it would probably run it again and we don't have that time
-np.savez("mesh_params.npz", nodes=nodes, quads=quads,
+np.savez(PROCESSED_DIR / "mesh_params.npz", nodes=nodes, quads=quads,
          centers=centers, cell_region=cell_region, void_bool=void_bool,
          cell_mat=cell_mat, cell_source=cell_source, tx_region=tx_region, void_region=void_region)
 
 # .npz is a zip file that stores multiple numpy arrays, you need to use np.load to read them
 # below is how you grab all of the parameters:
-#with np.load('mesh_params.npz', allow_pickle=False) as dat:
+#with np.load('data/processed/mesh_params.npz', allow_pickle=False) as dat:
      #^allow_pickle=False just means it won't think any of the files are malicious
 #    nodes = dat['nodes']
 #    quads = dat['quads']

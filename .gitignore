@@ -1,6 +1,15 @@
-# Local elevation data folder
-/Elevation/
-
-# Python-generated files
+# Local environment and Python caches
+.venv/
+venv/
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+
+# Downloaded elevation tiles and partial downloads
+/data/raw/elevation/tiles/
+
+# Reproducible generated outputs; retain documentation and reference inputs
+/data/processed/*.npz
+/meshes/generated/
+/results/*
+!/results/README.md
