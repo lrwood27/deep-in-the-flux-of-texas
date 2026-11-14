@@ -27,7 +27,32 @@ from matplotlib.colors import PowerNorm, ListedColormap, BoundaryNorm
 from matplotlib.patches import Patch
 
 
-states = gpd.read_file('cb_2023_us_state_500k.zip') #reading geo data for all states
+# Repository paths added because of Luke
+# This script is in scripts/preprocessing/Quads_Meshing.py.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
+ELEVATION_DIR = PROJECT_ROOT / "Elevation"
+
+MESH_DIR = PROJECT_ROOT / "meshes" / "generated"
+PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
+
+MESH_FILE = MESH_DIR / "tx_mesh.msh"
+
+BOUNDARY_FILE = (
+    RAW_DATA_DIR / "boundaries" / "cb_2023_us_state_500k.zip"
+)
+
+POP_FILE = (
+    RAW_DATA_DIR / "population" / "usa_pd_2020_1km.tif"
+)
+
+# Create output folders if needed
+MESH_DIR.mkdir(parents=True, exist_ok=True)
+PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+
+states = gpd.read_file(BOUNDARY_FILE) #reading geo data for all states
+
 tx = states.loc[states['NAME']=='Texas'].copy() #getting geo data for texas
 tx_meters = tx.to_crs('EPSG:5070') #change coordinate system from degrees to meters
 
@@ -238,6 +263,7 @@ mesh = meshio.read(MESH_FILE)
 nodes = mesh.points[:, :2] #get nodes
 quads = mesh.get_cells_type('quad') #get cell info
 
+
 #getting physical group labels but only for the quads, not the boundaries
 cell_region = mesh.get_cell_data('gmsh:physical', "quad") 
 
@@ -398,7 +424,7 @@ for i in range(len(quads)):
     else:
         cell_mat[i] = 4
 
-
+print('Before adding void regions:')
 for mat in range(5):
     count = np.count_nonzero(cell_mat==mat)
     print(f'material ID: {mat}, count: {count}')
@@ -423,17 +449,13 @@ for i in range(len(quads)):
             cell_source[i] = 2
 
 
-for Q in range(3):
-    count = np.count_nonzero(cell_source == Q)
-    print(f'source ID: {Q}, count: {count}')
-
 
 #Now we overwrite the cell IDs, material 5 = void, source ID is 0 (no source)
 void_mat_ID = 5
 cell_mat[void_bool] = void_mat_ID #anywhere that the boolean is true becomes the void material ID
 cell_source[void_bool] = 0 #same process as the material ID, but just declare them as no source
 
-
+print('After adding void regions:')
 #Check what has changed with the addition of the new material ID
 for mat in range(6):
     count = np.count_nonzero(cell_mat==mat)

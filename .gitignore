@@ -5,6 +5,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
+#Elevation folder
+/Elevation/
+
 # Downloaded elevation tiles and partial downloads
 /data/raw/elevation/tiles/
 
