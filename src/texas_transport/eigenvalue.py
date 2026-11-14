@@ -11,9 +11,28 @@
 # Void cells remain in the arrays and have zero fission production.
 # Old/new inputs refer to consecutive iterations; tolerances are allowed changes.
 
+#################
+#### Modules ####
+#################
+
+import numpy as np
+
+#################
+### Functions ###
+#################
 
 def build_cell_id_map(cell_ids):  # Match each Gmsh cell ID to its array position.
-    pass
+    cell_ids = np.asarray(cell_ids)
+
+    ### Checks ###
+    if cell_ids.ndim != 1:
+        raise ValueError('Dimension of cell_ids array is not valid. Should be a 1D array.')
+    
+    if not (cell_ids.size >= 1):
+        raise ValueError('Erm array should not be empty. Need at least one value.')
+
+    if not np.issubdtype(cell_ids.dtype , np.integer):
+        raise ValueError('Cell IDs should be integer values.')
 
 
 def compute_fission_source(scalar_flux , nu_sigma_f):  # Multiply each cell's flux by its fission production cross section.
