@@ -1,44 +1,177 @@
 # Deep in the Flux of Texas
+
 ### A 2D Neutron Transport Study Using Elevation-Based Materials and Population-Based Sources
 
-**NUEN 430 — Fall 2026 Final Project**  
-**Team:** Joseangel Lima-Tapia, Madalyn Oliver, and Luke Wood  
-**Status:** In development — scope updated after instructor feedback (November 5, 2026)
+**NUEN 430 — Fall 2026 Final Project**<br>
+**Team:** Joseangel Lima-Tapia, Madalyn Oliver, and Luke Wood<br>
+**Status:** Geographic preprocessing implemented; transport solver and verification pending<br>
+**Last updated:** November 13, 2026
 
 ## Overview
 
-This project uses a map of Texas as the basis for a **two-dimensional, one-group neutron transport simulation**. Terrain elevation will be used to assign hypothetical material regions, and population density will be used to place weak, strong, or zero external neutron sources. The primary goal is to implement, verify, and study a working transport solver before adding advanced features.
+This project uses a map of Texas as the basis for a two-dimensional, single-energy-group neutron transport study, with **all cross sections evaluated at 2 MeV**. Terrain elevation determines hypothetical material regions, and population density determines where external neutron sources will be placed.
 
-The **core solver** will use the **discrete ordinates ($S_N$) method with diamond-difference spatial discretization on a Cartesian grid**. We will first solve steady-state, fixed-source transport with absorption and isotropic scattering. Once the solver is verified, we will apply it to the Texas map and explore how the material layout and source distribution affect the scalar neutron flux.
+The repository currently contains the **geographic preprocessing workflow**: download elevation tiles, simplify the Texas boundary, generate an unstructured quadrilateral Gmsh mesh, sample elevation and population density at cell centers, and export material/source IDs for use by future solver scripts. It also includes functions for visualizing the mesh and mapped data.
 
-> **Modeling note:** Texas provides a recognizable geometry for a numerical experiment. The assigned materials and neutron sources are hypothetical, not a physical prediction of neutron behavior over real geographic distances. The computational domain/length scales and macroscopic cross sections will be made consistent or nondimensionalized.
+The planned core solver remains the **discrete ordinates ($S_N$) method with diamond-difference spatial discretization on a Cartesian grid**, following the November 5 instructor feedback. Transport sweeps, scattering iteration, cross sections, and verification cases have not yet been implemented in this repository. The current quadrilateral mesh is an unstructured geographic mesh; connecting the preprocessing work to the planned Cartesian solver remains an implementation task.
 
-## Revised project scope
+> **Modeling note:** Texas provides a recognizable geometry for a numerical experiment. The material labels and neutron sources are hypothetical. Geographic distances and transport cross sections will need consistent units or nondimensionalization before solving the transport equation.
 
-Following instructor feedback, the project is divided into a required **core** and **optional extensions**.
+## Repository contents
 
-| Component | Core project | Optional extension (only after verification) |
+| File | Purpose |
+| --- | --- |
+| [`Quads_Meshing.py`](Quads_Meshing.py) | Builds the Texas quadrilateral mesh, samples raster data, assigns material/source IDs, exports arrays, and defines plotting functions. |
+| [`elevation_download.py`](elevation_download.py) | Downloads the elevation GeoTIFFs listed in `data.txt` into `Elevation/`. |
+| [`data.txt`](data.txt) | List of 191 USGS elevation-tile download URLs. |
+| [`cb_2023_us_state_500k.zip`](cb_2023_us_state_500k.zip) | 2023 U.S. Census cartographic state boundaries at 1:500,000 scale; read directly from the ZIP. |
+| [`usa_pd_2020_1km.tif`](usa_pd_2020_1km.tif) | Population-density raster used by the preprocessing script. |
+| [`tx_mesh.msh`](tx_mesh.msh) | Included Gmsh mesh; regenerated when `Quads_Meshing.py` runs. |
+| [`.gitignore`](.gitignore) | Excludes downloaded `Elevation/` data and Python bytecode. |
+
+The workflow additionally creates:
+
+```text
+Elevation/          # Downloaded elevation GeoTIFFs; ignored by Git
+mesh_params.npz     # Generated mesh and material/source arrays
+```
+
+There are currently no solver, test, or results directories. `mesh_params.npz` is generated locally and is not included in the repository; it is also not currently excluded by `.gitignore`.
+
+## Setup and run
+
+Use Python 3 with NumPy, GeoPandas, Shapely, Gmsh, meshio, Rasterio, Matplotlib, and Requests. Dependency versions have not yet been pinned in a requirements file.
+
+The following commands are for **PowerShell**, run from the repository root. They use a virtual environment without requiring activation:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install numpy geopandas shapely gmsh meshio rasterio matplotlib requests
+```
+
+On other platforms, use the equivalent virtual-environment Python executable (`.venv/bin/python`). All scripts resolve input and output paths relative to the working directory, so run them from the repository root.
+
+### 1. Download elevation data
+
+```powershell
+.\.venv\Scripts\python.exe elevation_download.py
+```
+
+The downloader reads all nonempty lines in `data.txt`, creates `Elevation/`, and downloads the tiles sequentially. Existing destination files are skipped. Each download is streamed to a temporary `.tif.blah` file and renamed to `.tif` after the transfer completes. This step requires internet access and can take substantial time and disk space.
+
+The boundary ZIP and population raster are already included in the repository. Keep their filenames unchanged unless you also edit the paths in `Quads_Meshing.py`.
+
+### 2. Generate the mesh and region assignments
+
+```powershell
+.\.venv\Scripts\python.exe Quads_Meshing.py
+```
+
+This regenerates `tx_mesh.msh`, samples the elevation and population rasters, prints cell counts and material/source distributions, and writes `mesh_params.npz`. It also prints the number of cells missing population data. The script rejects meshes with triangular surface cells or no quadrilaterals.
+
+The script executes its preprocessing at the top level, including when imported. Load `mesh_params.npz` from another script to reuse the exported arrays without repeating the meshing and raster sampling.
+
+### 3. Display maps
+
+The plotting functions are defined but are not called automatically. To run preprocessing once and then inspect maps interactively:
+
+```powershell
+.\.venv\Scripts\python.exe -i Quads_Meshing.py
+```
+
+At the Python prompt, call any of these functions:
+
+```python
+mesh_map()    # Quadrilateral mesh edges
+elev_map()    # Sampled elevation
+pop_map()     # Sampled population density
+mat_map()     # Material IDs
+source_map()  # Source IDs
+```
+
+The functions display Matplotlib windows using `plt.show()`; they do not automatically save figures.
+
+## Geographic preprocessing
+
+`Quads_Meshing.py` performs the following steps:
+
+1. Read the state boundaries, select Texas, and project coordinates to **EPSG:5070** in meters.
+2. Keep the largest mainland polygon and rebuild its exterior, removing interior holes and smaller detached pieces.
+3. Apply positive/negative buffers to close bays and smooth boundary details, then simplify the outline.
+4. Create a first-order Gmsh mesh using recombination and subdivision to produce quadrilateral surface cells. Physical groups are named `interior` and `outer_boundary`.
+5. Compute each quadrilateral's area centroid and transform those coordinates into each raster's coordinate system.
+6. Sample elevation from `Elevation/*.tif` and population density from `usa_pd_2020_1km.tif`, then assign material and source IDs.
+7. Save the mesh geometry and region IDs in `mesh_params.npz`.
+
+The current geometry settings are edited directly in `Quads_Meshing.py`:
+
+| Parameter | Current value | Purpose |
 | --- | --- | --- |
-| Spatial grid | Structured 2D Cartesian grid covering a map of Texas | Unstructured triangular Gmsh mesh |
-| Spatial method | **Diamond differencing** | **DG-P1** with upwind numerical fluxes |
-| Angular method | **$S_N$ discrete ordinates** | Higher angular orders / comparison with DG-P1 |
-| Problem type | **Steady-state, one-group, fixed-source transport** | Time-dependent transport |
-| Interactions | Absorption and isotropic scattering; **no fission multiplication** | Carefully controlled fission study only if subcriticality is established |
-| Boundaries | **Vacuum incoming flux** on the outer Cartesian boundary | Prescribed incident beam; more advanced reflection models |
-| Time integration | Not required for the steady-state core | **Crank–Nicolson** with time-step refinement |
-| Outputs | Verified flux solutions, error/convergence plots, Texas scalar-flux map | Transient flux animation; DG-P1 comparisons |
+| `bay_radius` | 10,000 m | Buffer distance for closing bays. |
+| `ridge_radius` | 7,000 m | Buffer distance for smoothing smaller boundary features. |
+| `simplify_tolerance` | 10,000 m | Allowed geometric simplification tolerance. |
+| `h` | 30,000 m | Requested Gmsh characteristic mesh size. |
 
-The previously proposed **DG-P1 + $S_N$ + white-reflective boundaries + Crank–Nicolson** formulation is **not the baseline project**. We will consider DG-P1 **only if the diamond-difference solver is working and verified first**.
+The simplified boundary approximates the Texas mainland. The requested mesh size does not imply uniform square cells. Raster values are sampled at cell centroids, rather than averaged over each cell's area.
 
-### Why the change?
+### Elevation-based material regions
 
-The original formulation combined multiple challenging methods: discontinuous finite elements on an unstructured mesh, angular transport, reflective boundary coupling, and implicit transients. A Cartesian diamond-difference $S_N$ solver is more closely aligned with the course methods and provides a tractable path to the required verification and results.
+| Material ID | Elevation $h$ (m) | Hypothetical material label |
+| --- | --- | --- |
+| 0 | $h < 100$ | Water |
+| 1 | $100 \le h < 300$ | Graphite |
+| 2 | $300 \le h < 700$ | Boron |
+| 3 | $700 \le h < 1500$ | Low-enriched uranium (5%) |
+| 4 | $h \ge 1500$ | Weapons-grade plutonium |
 
-We are also avoiding fission multiplication in the baseline problem. Fissile material regions combined with zero-leakage reflective boundaries could make the system critical or supercritical, in which case a finite steady-state fixed-source solution would not exist. **For the core project, $\nu\Sigma_f=0$ everywhere.** Labels such as LEU and plutonium are retained as hypothetical region categories; modeling their actual fission physics is out of scope for the baseline.
+These IDs currently label regions only; no cross sections are assigned. For the planned nonmultiplying baseline, all regions will have absorption/scattering coefficients with $\nu\Sigma_f=0$.
 
-## Mathematical model
+**Current missing-data behavior:** Elevation starts as `NaN`. Any cell that remains unsampled falls through the material-assignment `else` branch to material ID 4. The script does not stop if `Elevation/` is absent or incomplete, so confirm elevation coverage before interpreting the material map. Missing elevation is not explicitly flagged in the exported IDs.
 
-For each discrete angular direction $\boldsymbol\Omega_m=(\mu_m,\eta_m,\ldots)$, the steady-state, one-group transport equation is
+### Population-based source regions
+
+| Source ID | Population density $\rho$ (people/km²) | Intended external source |
+| --- | --- | --- |
+| 0 | $\rho < 100$, or missing population data | No source: $Q=0$ |
+| 1 | $100 \le \rho < 1000$ | Weak: $Q=Q_{\mathrm{weak}}$ |
+| 2 | $\rho \ge 1000$ | Strong: $Q=Q_{\mathrm{strong}}$ |
+
+Only the integer source IDs are currently stored. Numerical values for $Q_{\mathrm{weak}}$ and $Q_{\mathrm{strong}}$ remain to be selected. Population density is used to position hypothetical sources; it does not represent actual neutron production.
+
+## Exported mesh parameters
+
+`mesh_params.npz` contains five NumPy arrays, with one shared cell ordering:
+
+| Key | Shape | Contents |
+| --- | --- | --- |
+| `nodes` | `(N_nodes, 2)` | Node coordinates in EPSG:5070 meters. |
+| `quads` | `(N_cells, 4)` | Zero-based node indices for each quadrilateral. |
+| `centers` | `(N_cells, 2)` | Quadrilateral area-centroid coordinates in EPSG:5070 meters. |
+| `cell_mat` | `(N_cells,)` | Integer material IDs, 0–4. |
+| `cell_source` | `(N_cells,)` | Integer source IDs, 0–2. |
+
+Load them in another script with:
+
+```python
+import numpy as np
+
+with np.load("mesh_params.npz", allow_pickle=False) as data:
+    nodes = data["nodes"]
+    quads = data["quads"]
+    centers = data["centers"]
+    cell_mat = data["cell_mat"]
+    cell_source = data["cell_source"]
+```
+
+The export does not include the raw sampled elevation/population arrays, cross sections, source strengths, boundary physical groups, or transport connectivity. The Gmsh physical groups remain in `tx_mesh.msh`.
+
+## Planned transport model
+
+The core project is a **steady-state, one-group, fixed-source** problem with absorption, isotropic scattering, and vacuum incoming angular flux on the outer Cartesian boundary. Fission multiplication is excluded from the baseline.
+
+The model uses a **single energy group with all cross sections evaluated at 2 MeV**, rather than averaged over an energy spectrum. These fixed cross sections will be used throughout the transport calculation.
+
+For discrete direction $\boldsymbol\Omega_m=(\mu_m,\eta_m,\ldots)$:
 
 $$
 \mu_m\frac{\partial\psi_m}{\partial x}
@@ -48,89 +181,39 @@ $$
 +\frac{Q(x,y)}{4\pi},
 $$
 
-where the scalar flux is approximated by angular quadrature,
+with scalar flux approximated by
 
 $$
 \phi(x,y)\approx\sum_m w_m\psi_m(x,y),
 \qquad \sum_m w_m=4\pi.
 $$
 
-Here $\psi_m$ is the angular flux, $\Sigma_t$ and $\Sigma_s$ are the total and scattering macroscopic cross sections, and $Q$ is the external source. The physical domain is two-dimensional in space; the angular quadrature retains direction dependence. There is **no fission source term** in the baseline solver.
+Here $\psi_m$ is angular flux, $\Sigma_t$ and $\Sigma_s$ are macroscopic total and scattering cross sections, and $Q$ is the external source. Diamond-difference directional sweeps and source iteration will couple the angular fluxes through isotropic scattering.
 
-**Diamond differencing** balances angular flux across each rectangular cell and approximates a cell-centered flux by averages of incoming and outgoing face fluxes. Directional transport sweeps will be coupled through **source iteration** for isotropic scattering. Spatial and angular refinement, together with source-iteration convergence criteria, will be documented.
+The planned Cartesian domain will contain a rasterized Texas mask, with a specified nonmultiplying background and zero external source outside Texas. The current unstructured quad mesh does not provide the rectangular cells or sweep ordering assumed by this method; the Cartesian mapping and solver connectivity still need to be built.
 
-### Boundaries and Texas map representation
+DG-P1 on an unstructured mesh, white-reflective boundaries, and Crank–Nicolson transient transport remain optional extensions after the core solver is verified.
 
-The baseline implementation will use a **rectangular Cartesian computational grid** containing a rasterized Texas outline. Inside Texas, elevation and population data determine the materials and sources. Cells outside the Texas mask will be assigned a specified nonmultiplying background material and no external sources. The **outer rectangular boundary** will use vacuum conditions (zero incoming angular flux).
+## Progress and verification plan
 
-This is deliberately simpler than a reflective boundary that follows every irregular segment of the state outline. A staircase representation of the Texas border or white-reflective boundaries may be investigated only after the core solver is verified. A time-limited incident boundary beam is likewise an optional extension, not a prerequisite for the steady-state study.
+- [x] Include the Texas boundary dataset and population-density raster.
+- [x] Add a USGS elevation URL list and a downloader that skips existing files.
+- [x] Implement mainland boundary simplification and quadrilateral meshing.
+- [x] Implement centroid-based raster sampling and material/source classification.
+- [x] Export mesh geometry and region IDs for use by other scripts.
+- [x] Add mesh, elevation, population, material, and source plotting functions.
+- [ ] Validate elevation coverage and explicitly handle missing elevation before assigning materials.
+- [ ] Build the Cartesian Texas/material/source grid required by the planned solver.
+- [ ] Obtain all material cross sections at 2 MeV, select source strengths, and establish consistent transport length units.
+- [ ] Implement steady-state $S_N$ diamond-difference sweeps and isotropic-scattering source iteration.
+- [ ] Verify pure-absorber attenuation against an exponential solution.
+- [ ] Verify a manufactured solution with consistent forcing and boundary data.
+- [ ] Run spatial/angular refinement studies and report observed errors and convergence order.
+- [ ] Track source-iteration convergence and document its stopping criterion.
+- [ ] Generate Texas scalar-flux maps and material/source parameter studies.
+- [ ] If time permits, add and verify transient transport or compare with DG-P1.
 
-## Elevation-based material regions
-
-The following thresholds come from our original proposal and may be adjusted when we choose and process the elevation dataset.
-
-| Material ID | Elevation (m) | Hypothetical material label |
-| --- | --- | --- |
-| 0 | $h < 100$ | Water |
-| 1 | $100 \le h < 300$ | Graphite |
-| 2 | $300 \le h < 700$ | Boron |
-| 3 | $700 \le h < 1500$ | Low-enriched uranium (5%) |
-| 4 | $h \ge 1500$ | Weapons-grade plutonium |
-
-For the **nonmultiplying baseline**, these are material-region identifiers with assigned absorption/scattering coefficients; they are **not complete physical models of fissile nuclear fuel**. Cross-section datasets and unit conventions remain to be finalized.
-
-## Population-based source regions
-
-| Source ID | Population density (people/km²) | External source |
-| --- | --- | --- |
-| 0 | $\rho < 100$ | No source: $Q=0$ |
-| 1 | $100 \le \rho < 1000$ | Weak: $Q=Q_{\mathrm{weak}}$ |
-| 2 | $\rho \ge 1000$ | Strong: $Q=Q_{\mathrm{strong}}$ |
-
-The numerical values of $Q_{\mathrm{weak}}$ and $Q_{\mathrm{strong}}$ are still to be selected. The population density is a **data-driven way to position hypothetical neutron sources**, not a claim that populated areas produce these neutron source strengths.
-
-## Verification and numerical study
-
-Verification comes **before** the full Texas application.
-
-1. **Pure-absorber attenuation:** For a homogeneous non-scattering case, compare the computed directional flux with the known exponential attenuation solution.
-2. **Manufactured solution:** Prescribe a smooth angular-flux field, derive consistent forcing and boundary data, and measure numerical error.
-3. **Mesh refinement:** Plot error versus Cartesian mesh size and estimate the observed spatial convergence order. Examine angular-order dependence as appropriate.
-4. **Source-iteration convergence:** Track residual/change per iteration and explain the stopping criterion for scattering problems.
-5. **Texas study:** Map materials and population-based sources and interpret how heterogeneity and source contrast change the steady-state scalar flux.
-6. **Only if time permits:** Introduce a Crank–Nicolson transient, verify temporal order by time-step refinement, and animate an incident beam. An external-code comparison or DG-P1 implementation is also a stretch goal.
-
-Diamond differencing can produce nonphysical negative angular fluxes in difficult, optically thick cells; such behavior, if encountered, will be reported and addressed through mesh/parameter studies rather than hidden.
-
-## Current progress
-
-- [x] Defined the Texas geography, hypothetical materials, and population-based source categories.
-- [x] Created an initial **triangular Gmsh Texas mesh** for exploratory work; it is not the baseline diamond-difference grid.
-- [x] Built a separate **toy diffusion prototype** for visualizing localized sources; it is not a neutron transport solver.
-- [x] Updated the numerical approach in response to instructor feedback.
-- [ ] Create a Cartesian grid with a rasterized Texas/material/source map.
-- [ ] Implement steady-state one-group $S_N$ diamond-difference sweeps.
-- [ ] Add isotropic scattering and source iteration.
-- [ ] Verify pure-absorber attenuation and a manufactured solution.
-- [ ] Run spatial/angular refinement and source-iteration convergence tests.
-- [ ] Generate steady-state Texas flux maps and parameter-study results.
-- [ ] **Optional:** Implement Crank–Nicolson transient transport and an animation.
-- [ ] **Optional:** Revisit DG-P1 on the triangular mesh after the diamond-difference solver is verified.
-
-## Proposed repository organization
-
-```text
-.
-├── README.md
-├── src/                 # Cartesian S_N / diamond-difference solver (planned)
-├── data/                # Texas raster/material/source maps or retrieval instructions
-├── tests/               # Pure absorber and manufactured-solution tests (planned)
-├── results/             # Flux maps, convergence plots, tables (planned)
-├── legacy_mesh/         # Earlier triangular Gmsh mesh, if retained
-└── prototypes/          # Earlier diffusion visualization, if retained
-```
-
-*This layout is a suggestion, not a claim that these folders currently exist. File-specific run instructions will be added as modules are implemented.*
+Verification will precede the full Texas transport study. Any negative angular fluxes encountered with diamond differencing will be examined through mesh and optical-thickness studies.
 
 ## Course milestones
 
@@ -141,9 +224,10 @@ Diamond differencing can produce nonphysical negative angular fluxes in difficul
 | **December 7, 11:59 p.m.** | Final report, slides, and Git repository link |
 | December 10 | Presentation and live Q&A defense |
 
-## Reproducibility and attribution
+## Data attribution and reproducibility
 
-We will document the Python dependencies, input datasets, mesh sizes, run commands, verification tolerances, and the script that produces each figure as the code is developed. Data and software sources will be credited, and the final report will include the course-required disclosure of AI use.
+- **State boundaries:** U.S. Census Bureau, *2023 Cartographic Boundary File (SHP), State and Equivalent Entities for United States, 1:500,000*, included as `cb_2023_us_state_500k.zip` with its metadata.
+- **Elevation:** USGS elevation GeoTIFFs; the exact tile download URLs are recorded in `data.txt`. Downloaded tiles stay local in the Git-ignored `Elevation/` directory.
+- **Population density:** `usa_pd_2020_1km.tif`, included in the repository. Its original download source and attribution still need to be recorded.
 
-**Course:** NUEN 430, Fall 2026.  
-**Note:** This README describes the **revised project plan**, not a claim that the core transport solver has already been implemented or verified.
+Dependency versions, transport parameters, verification tolerances, and figure-generation commands will be recorded as the solver is developed. The final report will include the course-required disclosure of AI use.
