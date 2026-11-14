@@ -17,66 +17,95 @@ Following the latest discussion with our professor, the planned core solver uses
 
 > **Modeling note:** Texas provides a recognizable geometry for a numerical experiment. The material labels and neutron sources are hypothetical. Geographic distances and transport cross sections will need consistent units or nondimensionalization before solving the transport equation.
 
-## Repository contents
-
-| File | Purpose |
-| --- | --- |
-| [`Quads_Meshing.py`](Quads_Meshing.py) | Builds the Texas quadrilateral mesh, samples raster data, assigns material/source IDs, exports arrays, and defines plotting functions. |
-| [`elevation_download.py`](elevation_download.py) | Downloads the elevation GeoTIFFs listed in `data.txt` into `Elevation/`. |
-| [`data.txt`](data.txt) | List of 191 USGS elevation-tile download URLs. |
-| [`cb_2023_us_state_500k.zip`](cb_2023_us_state_500k.zip) | 2023 U.S. Census cartographic state boundaries at 1:500,000 scale; read directly from the ZIP. |
-| [`usa_pd_2020_1km.tif`](usa_pd_2020_1km.tif) | Population-density raster used by the preprocessing script. |
-| [`tx_mesh.msh`](tx_mesh.msh) | Included Gmsh mesh; regenerated when `Quads_Meshing.py` runs. |
-| [`.gitignore`](.gitignore) | Excludes downloaded `Elevation/` data and Python bytecode. |
-
-The workflow additionally creates:
+## Repository structure
 
 ```text
-Elevation/          # Downloaded elevation GeoTIFFs; ignored by Git
-mesh_params.npz     # Generated mesh and material/source arrays
+.
+|-- README.md
+|-- requirements.txt
+|-- scripts/
+|   `-- preprocessing/
+|       |-- elevation_download.py
+|       `-- Quads_Meshing.py
+|-- src/
+|   `-- texas_transport/        # Reusable solver package scaffold; not implemented
+|-- configs/                   # Future case inputs; choices documented in README
+|-- data/
+|   |-- raw/
+|   |   |-- boundaries/cb_2023_us_state_500k.zip
+|   |   |-- population/usa_pd_2020_1km.tif
+|   |   `-- elevation/
+|   |       |-- urls.txt        # 191 USGS tile URLs
+|   |       `-- tiles/          # Downloaded files; ignored by Git
+|   `-- processed/             # Generated mesh_params.npz; ignored by Git
+|-- meshes/
+|   |-- reference/tx_mesh.msh   # Preserved committed mesh
+|   `-- generated/             # Regenerated tx_mesh.msh; ignored by Git
+|-- verification/              # Planned analytical cases and refinement studies
+|-- tests/                     # Future automated tests of numerical routines
+|-- results/                   # Generated run outputs; ignored except README
+`-- docs/                      # Derivations, decisions, report/presentation sources
 ```
 
-There are currently no solver, test, or results directories. `mesh_params.npz` is generated locally and is not included in the repository; it is also not currently excluded by `.gitignore`.
+The current executable scripts are
+[`scripts/preprocessing/elevation_download.py`](scripts/preprocessing/elevation_download.py)
+and [`scripts/preprocessing/Quads_Meshing.py`](scripts/preprocessing/Quads_Meshing.py).
+Their filenames are preserved from the original layout. The original datasets and mesh
+have been moved without changing their contents.
+
+[`src/texas_transport/README.md`](src/texas_transport/README.md) describes the planned
+shared mesh, quadrature, materials, sources, boundary, sweep, fixed-source, and eigenvalue
+modules. Those modules have not yet been implemented. Keep case-running scripts separate
+from reusable numerical routines. Packaging/entry points can be added with the first solver modules.
+
+[`verification/README.md`](verification/README.md) records the development sequence,
+starting with the square-grid infinite-medium test and then the same test on arbitrary quads.
+[`configs/README.md`](configs/README.md) records the inputs each future case needs.
+Folder READMEs distinguish planned work from existing functionality.
+
+Original data and small reproducible inputs stay in Git. Downloaded tiles and generated
+arrays, meshes, and run outputs are ignored. The committed reference mesh is preserved
+separately so preprocessing runs do not overwrite it.
 
 ## Setup and run
 
-Use Python 3 with NumPy, GeoPandas, Shapely, Gmsh, meshio, Rasterio, Matplotlib, and Requests. Dependency versions have not yet been pinned in a requirements file.
+Use Python 3 with NumPy, GeoPandas, Shapely, Gmsh, meshio, Rasterio, Matplotlib, and Requests. Dependencies are listed in [`requirements.txt`](requirements.txt); versions are not yet pinned.
 
 The following commands are for **PowerShell**, run from the repository root. They use a virtual environment without requiring activation:
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install numpy geopandas shapely gmsh meshio rasterio matplotlib requests
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-On other platforms, use the equivalent virtual-environment Python executable (`.venv/bin/python`). All scripts resolve input and output paths relative to the working directory, so run them from the repository root.
+On other platforms, use the equivalent virtual-environment Python executable (`.venv/bin/python`). The commands shown assume the repository root. Both preprocessing scripts resolve data and output paths from their own file locations, so their file access also works when launched from another working directory.
 
 ### 1. Download elevation data
 
 ```powershell
-.\.venv\Scripts\python.exe elevation_download.py
+.\.venv\Scripts\python.exe scripts/preprocessing/elevation_download.py
 ```
 
-The downloader reads all nonempty lines in `data.txt`, creates `Elevation/`, and downloads the tiles sequentially. Existing destination files are skipped. Each download is streamed to a temporary `.tif.blah` file and renamed to `.tif` after the transfer completes. This step requires internet access and can take substantial time and disk space.
+The downloader reads all nonempty lines in `data/raw/elevation/urls.txt`, creates `data/raw/elevation/tiles/`, and downloads the tiles sequentially. Existing destination files are skipped. Each download is streamed to a temporary `.tif.blah` file and renamed to `.tif` after the transfer completes. This step requires internet access and can take substantial time and disk space.
 
-The boundary ZIP and population raster are already included in the repository. Keep their filenames unchanged unless you also edit the paths in `Quads_Meshing.py`.
+The boundary ZIP and population raster are included under `data/raw/boundaries/` and `data/raw/population/`. Keep their filenames unchanged unless you also edit the paths in `scripts/preprocessing/Quads_Meshing.py`.
 
 ### 2. Generate the mesh and region assignments
 
 ```powershell
-.\.venv\Scripts\python.exe Quads_Meshing.py
+.\.venv\Scripts\python.exe scripts/preprocessing/Quads_Meshing.py
 ```
 
-This regenerates `tx_mesh.msh`, samples the elevation and population rasters, prints cell counts and material/source distributions, and writes `mesh_params.npz`. It also prints the number of cells missing population data. The script rejects meshes with triangular surface cells or no quadrilaterals.
+This regenerates `meshes/generated/tx_mesh.msh`, samples the elevation and population rasters, prints cell counts and material/source distributions, and writes `data/processed/mesh_params.npz`. It also prints the number of cells missing population data. The script rejects meshes with triangular surface cells or no quadrilaterals.
 
-The script executes its preprocessing at the top level, including when imported. Load `mesh_params.npz` from another script to reuse the exported arrays without repeating the meshing and raster sampling.
+The script executes its preprocessing at the top level, including when imported. Load `data/processed/mesh_params.npz` from another script to reuse the exported arrays without repeating the meshing and raster sampling.
 
 ### 3. Display maps
 
 The plotting functions are defined but are not called automatically. To run preprocessing once and then inspect maps interactively:
 
 ```powershell
-.\.venv\Scripts\python.exe -i Quads_Meshing.py
+.\.venv\Scripts\python.exe -i scripts/preprocessing/Quads_Meshing.py
 ```
 
 At the Python prompt, call any of these functions:
@@ -93,17 +122,17 @@ The functions display Matplotlib windows using `plt.show()`; they do not automat
 
 ## Geographic preprocessing
 
-`Quads_Meshing.py` performs the following steps:
+`scripts/preprocessing/Quads_Meshing.py` performs the following steps:
 
 1. Read the state boundaries, select Texas, and project coordinates to **EPSG:5070** in meters.
 2. Keep the largest mainland polygon and rebuild its exterior, removing interior holes and smaller detached pieces.
 3. Apply positive/negative buffers to close bays and smooth boundary details, then simplify the outline.
 4. Create a first-order Gmsh mesh using recombination and subdivision to produce quadrilateral surface cells. Physical groups are named `interior` and `outer_boundary`.
 5. Compute each quadrilateral's area centroid and transform those coordinates into each raster's coordinate system.
-6. Sample elevation from `Elevation/*.tif` and population density from `usa_pd_2020_1km.tif`, then assign material and source IDs.
-7. Save the mesh geometry and region IDs in `mesh_params.npz`.
+6. Sample elevation from `data/raw/elevation/tiles/*.tif` and population density from `usa_pd_2020_1km.tif`, then assign material and source IDs.
+7. Save the mesh geometry and region IDs in `data/processed/mesh_params.npz`.
 
-The current geometry settings are edited directly in `Quads_Meshing.py`:
+The current geometry settings are edited directly in `scripts/preprocessing/Quads_Meshing.py`:
 
 | Parameter | Current value | Purpose |
 | --- | --- | --- |
@@ -126,7 +155,7 @@ The simplified boundary approximates the Texas mainland. The requested mesh size
 
 These IDs currently label regions only; no cross sections are assigned. The planned model includes absorption, isotropic scattering, and fission production, with all cross sections evaluated at 2 MeV. The data source and material densities/compositions remain undecided: either read macroscopic cross sections directly or calculate them from microscopic cross sections and specified number densities ($\Sigma_x=\sum_i N_i\sigma_{x,i}$).
 
-**Current missing-data behavior:** Elevation starts as `NaN`. Any cell that remains unsampled falls through the material-assignment `else` branch to material ID 4. The script does not stop if `Elevation/` is absent or incomplete, so confirm elevation coverage before interpreting the material map. Missing elevation is not explicitly flagged in the exported IDs.
+**Current missing-data behavior:** Elevation starts as `NaN`. Any cell that remains unsampled falls through the material-assignment `else` branch to material ID 4. The script does not stop if `data/raw/elevation/tiles/` is absent or incomplete, so confirm elevation coverage before interpreting the material map. Missing elevation is not explicitly flagged in the exported IDs.
 
 ### Population-based source regions
 
@@ -140,7 +169,7 @@ Only the integer source IDs are currently stored. Numerical values for $Q_{\math
 
 ## Exported mesh parameters
 
-`mesh_params.npz` contains five NumPy arrays, with one shared cell ordering:
+`data/processed/mesh_params.npz` contains five NumPy arrays, with one shared cell ordering:
 
 | Key | Shape | Contents |
 | --- | --- | --- |
@@ -150,12 +179,12 @@ Only the integer source IDs are currently stored. Numerical values for $Q_{\math
 | `cell_mat` | `(N_cells,)` | Integer material IDs, 0–4. |
 | `cell_source` | `(N_cells,)` | Integer source IDs, 0–2. |
 
-Load them in another script with:
+From the repository root, load them in another script with:
 
 ```python
 import numpy as np
 
-with np.load("mesh_params.npz", allow_pickle=False) as data:
+with np.load("data/processed/mesh_params.npz", allow_pickle=False) as data:
     nodes = data["nodes"]
     quads = data["quads"]
     centers = data["centers"]
@@ -163,7 +192,7 @@ with np.load("mesh_params.npz", allow_pickle=False) as data:
     cell_source = data["cell_source"]
 ```
 
-The export does not include the raw sampled elevation/population arrays, cross sections, source strengths, boundary physical groups, or transport connectivity. The Gmsh physical groups remain in `tx_mesh.msh`.
+The export does not include the raw sampled elevation/population arrays, cross sections, source strengths, boundary physical groups, or transport connectivity. The Gmsh physical groups remain in `meshes/generated/tx_mesh.msh`.
 
 ## Planned transport model
 
@@ -265,8 +294,8 @@ Verification will precede the full Texas transport study. Track particle balance
 
 ## Data attribution and reproducibility
 
-- **State boundaries:** U.S. Census Bureau, *2023 Cartographic Boundary File (SHP), State and Equivalent Entities for United States, 1:500,000*, included as `cb_2023_us_state_500k.zip` with its metadata.
-- **Elevation:** USGS elevation GeoTIFFs; the exact tile download URLs are recorded in `data.txt`. Downloaded tiles stay local in the Git-ignored `Elevation/` directory.
-- **Population density:** `usa_pd_2020_1km.tif`, included in the repository. Its original download source and attribution still need to be recorded.
+- **State boundaries:** U.S. Census Bureau, *2023 Cartographic Boundary File (SHP), State and Equivalent Entities for United States, 1:500,000*, included as `data/raw/boundaries/cb_2023_us_state_500k.zip` with its metadata.
+- **Elevation:** USGS elevation GeoTIFFs; the exact tile download URLs are recorded in `data/raw/elevation/urls.txt`. Downloaded tiles stay local in the Git-ignored `data/raw/elevation/tiles/` directory.
+- **Population density:** `data/raw/population/usa_pd_2020_1km.tif`, included in the repository. Its original download source and attribution still need to be recorded.
 
 Dependency versions, transport parameters, verification tolerances, and figure-generation commands will be recorded as the solver is developed. The final report will include the course-required disclosure of AI use.

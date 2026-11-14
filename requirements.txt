@@ -1,0 +1,8 @@
+numpy
+geopandas
+shapely
+gmsh
+meshio
+rasterio
+matplotlib
+requests
