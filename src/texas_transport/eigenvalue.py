@@ -138,9 +138,9 @@ def check_eigenvalue_convergence(old_keff , new_keff , old_source , new_source ,
     new_source_contribution = new_source * cell_areas # Finds (new) source contribution in each individual cell
     new_source_contribution /= np.sum(new_source_contribution) # Normalizes to one
 
-    rel_source_change = np.sum(np.abs(new_source_contribution - old_source_contribution))
+    source_change = np.sum(np.abs(new_source_contribution - old_source_contribution))
 
-    if rel_k_change > k_tolerance or rel_source_change > source_tolerance:
+    if rel_k_change > k_tolerance or source_change > source_tolerance:
         return False
     else:
         return True
