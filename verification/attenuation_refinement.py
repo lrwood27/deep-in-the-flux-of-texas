@@ -16,6 +16,7 @@ def main():
     exact_outlet = np.exp(-1.0)
 
     cell_widths = []
+    cell_counts = []
     errors = []
     for n in (10, 20, 40, 80):
         # n cells along each side need n + 1 edge positions.
@@ -30,6 +31,7 @@ def main():
         outlet_flux = psi[:, -1, 0]
         error = np.max(np.abs(outlet_flux - exact_outlet))
         cell_widths.append(hx)
+        cell_counts.append(n * n)  # Total cells on an n-by-n grid.
         errors.append(error)
         print(f"N = {n:2d}, h = {hx:.4f}, outlet error = {error:.6e}")
 
@@ -37,18 +39,26 @@ def main():
     # by the change in log(h) gives p. Use the two finest grids.
     order = np.log(errors[-2] / errors[-1]) / np.log(cell_widths[-2] / cell_widths[-1])
 
-    plt.figure(figsize=(7, 5))
-    plt.loglog(cell_widths, errors, "o-", label="Step differencing")
-    plt.xlabel("Cell width h")
-    plt.ylabel("Maximum absolute outlet angular-flux error")
-    plt.title("Cartesian pure-absorber beam: mesh convergence")
-    plt.grid(True, which="both", alpha=0.3)
-    plt.legend(loc="upper left", title=f"Observed order p = {order:.3f}")
-    plt.tight_layout()
+    fig, ax = plt.subplots(figsize=(7, 5), layout="constrained")
+    ax.loglog(cell_widths, errors, "o-", label="Step differencing")
+    ax.set_xlabel("Cell width h")
+    ax.set_xticks(cell_widths, labels=[f"{width:g}" for width in cell_widths])
+    ax.xaxis.set_ticks([], minor=True)
+    ax.set_ylabel("Maximum absolute outlet angular-flux error")
+    ax.set_title("Cartesian pure-absorber beam: mesh convergence")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend(loc="upper left", title=f"Observed order p = {order:.3f}")
+
+    # Place total-cell labels above the corresponding widths. The error
+    # curve and the observed order still use cell width h.
+    top = ax.secondary_xaxis("top")
+    top.set_xticks(cell_widths, labels=[f"{count:,}" for count in cell_counts])
+    top.minorticks_off()
+    top.set_xlabel("Total cells")
 
     output = "results/cartesian_convergence.png"
-    plt.savefig(output, dpi=200)
-    plt.close()
+    fig.savefig(output, dpi=200)
+    plt.close(fig)
     print(f"Observed order p = {order:.3f}. Saved {output}")
 
 
